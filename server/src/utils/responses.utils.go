@@ -29,10 +29,10 @@ func SendResponse(res http.ResponseWriter, responseMessage, status string, respo
 			res.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(res).Encode(getJSONMessage("e", responseMessage))
 		default:
-			if len(responseData) > 1 {
+			if len(responseData) > 0 {
 				data := getJSONMessage("", responseMessage)
 				data["data"] = responseData[0]
-				res.WriteHeader(http.StatusBadRequest)
+				res.WriteHeader(http.StatusOK)
 				json.NewEncoder(res).Encode(data)
 			} else {
 				res.WriteHeader(http.StatusOK)
