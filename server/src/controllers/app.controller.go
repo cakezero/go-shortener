@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/cakezero/go-shortener/src/models"
 	"github.com/cakezero/go-shortener/src/utils"
+	"github.com/jpillora/go-tld"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.uber.org/zap"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/kamva/mgm/v3"
@@ -19,33 +18,11 @@ import (
 var NewValidator = validator.New()
 var Ctx = context.Background()
 
-func Home(res http.ResponseWriter, req *http.Request) {
-	res.Header().Set("Content-Type", "application/json")
-
-	id := req.URL.Query().Get("id")
-
-	var shortenUrlHistory []models.Url
-
-	urlHistory, findErr := mgm.Coll(&models.Url{}).Find(Ctx, bson.M{"user": id})
-
-	if findErr != nil {
-		utils.SendResponse(res, "No url has been shortened", "e")
-		return
-	}
-
-	if fetchErr := urlHistory.All(Ctx, &shortenUrlHistory); fetchErr != nil {
-		utils.SendResponse(res, "Error fetching url history", "e")
-		return
-	}
-
-	utils.SendResponse(res, "Url fetched", "", shortenUrlHistory)
-}
-
 func Shorten(res http.ResponseWriter, req *http.Request) {
 	res.Header().Set("Content-Type", "application/json")
 
 	type requestBody struct {
-		url string
+		Url string
 		Id  string
 	}
 
@@ -66,13 +43,15 @@ func Shorten(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	longUrl := reqBody.url
+	longUrl := reqBody.Url
 
-	utils.Logger.Info("Url from request", zap.String("longUrl", longUrl))
+	if !strings.HasPrefix(longUrl, "https://") && !strings.HasPrefix(longUrl, "http://") {
+		utils.SendResponse(res, "URL must start with https:// or http://", "")
+		return
+	}
 
-	// if _, notURLErr := url.ParseRequestURI(longUrl); notURLErr != nil {
-	if _, notURLErr := url.Parse(longUrl); notURLErr != nil {
-		utils.Logger.Error(notURLErr.Error())
+	_, err := tld.Parse(longUrl)
+	if err != nil {
 		utils.SendResponse(res, "Invalid URL passed, send urls like so: https://example.com or http://example.com", "b")
 		return
 	}
@@ -114,9 +93,8 @@ func Shorten(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	utils.SendResponse(res, "URL shortened", "", utils.Domain + shortUrl)
+	utils.SendResponse(res, "URL shortened", "")
 }
-
 
 func VisitLongUrl(res http.ResponseWriter, req *http.Request) {
 	res.Header().Set("Content-Type", "application/json")
@@ -134,40 +112,34 @@ func VisitLongUrl(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if shortenedLinkReqBody.ShortUrl == "" {
+	shortUrl := shortenedLinkReqBody.ShortUrl
+
+	if shortUrl == "" {
 		utils.SendResponse(res, "shortUrl is required", "b")
 		return
 	}
 
-	urlFound := mgm.Coll(&models.Url{}).FindOne(Ctx, bson.M{"shortUrl": shortenedLinkReqBody.ShortUrl});
-	if urlFound.Err() != nil {
-		utils.Logger.Error(urlFound.Err().Error())
+	var urlFound models.Url
+
+	urlNotFound := mgm.Coll(&models.Url{}).First(bson.M{"shorturl": shortUrl}, &urlFound)
+
+	if urlNotFound != nil {
 		utils.SendResponse(res, "shortUrl doesn't exist or is invalid", "e")
 		return
 	}
 
-	var urlProp models.Url
-
-	urlDecodeErr := urlFound.Decode(&urlProp)
-	if urlDecodeErr != nil {
-		utils.Logger.Error(urlDecodeErr.Error())
-		utils.SendResponse(res, "Internal server error", "e")
-		return
-	}
-
-	utils.SendResponse(res, "redirecting...", "", urlProp.LongUrl)
+	utils.SendResponse(res, "redirecting...", "", urlFound.LongUrl)
 }
 
 func DeleteUrl(res http.ResponseWriter, req *http.Request) {
 	res.Header().Set("Content-Type", "application/json")
-	
+
 	id := req.URL.Query().Get("id")
 
 	if id == "" {
 		utils.SendResponse(res, "id is required", "b")
 		return
 	}
-
 
 	deletedUrl := mgm.Coll(&models.Url{}).FindOneAndDelete(Ctx, bson.M{"_id": id})
 
@@ -178,4 +150,68 @@ func DeleteUrl(res http.ResponseWriter, req *http.Request) {
 	}
 
 	utils.SendResponse(res, "Url deleted successfully", "")
+}
+
+func FetchUrls(res http.ResponseWriter, req *http.Request) {
+	res.Header().Set("Content-Type", "applicaton/json")
+
+	id := req.URL.Query().Get("id")
+
+	if id == "" {
+		utils.SendResponse(res, "id is required", "")
+		return
+	}
+
+	var urls []models.Url 
+
+	noUrlsFound := mgm.Coll(&models.Url{}).SimpleFind(&urls, bson.M{"user": id})
+
+	if noUrlsFound != nil {
+		utils.SendResponse(res, "No urls shortened", "")
+		return
+	}
+
+	utils.SendResponse(res, "urls fetched!", "", urls)
+}
+
+func DeleteAllUrls(res http.ResponseWriter, req *http.Request) {
+	res.Header().Set("Content-Type", "application/json")
+
+	id := req.URL.Query().Get("id")
+
+	_, deleteManyErr := mgm.Coll(&models.Url{}).DeleteMany(Ctx, bson.M{"user": id})
+
+	if deleteManyErr != nil {
+		utils.Logger.Error(deleteManyErr.Error())
+		utils.SendResponse(res, "Error deleting urls", "e")
+		return
+	}
+
+	utils.SendResponse(res, "Urls deleted successfully", "")
+}
+func DeleteSelectedUrls(res http.ResponseWriter, req *http.Request) {
+	res.Header().Set("Content-Type", "application/json")
+
+	type selectedUrls struct {
+		Ids []string
+	}
+
+	var selectedUrlIds selectedUrls
+
+	if decodedErr := json.NewDecoder(req.Body).Decode(&selectedUrlIds); decodedErr != nil {
+		utils.SendResponse(res, "Data received from request is inappropriate", "")
+		return
+	}
+
+	for _, id := range selectedUrlIds.Ids {
+		deletedUrl := mgm.Coll(&models.Url{}).FindOneAndDelete(Ctx, bson.M{"_id": id})
+
+		if deletedUrl.Err() != nil {
+			utils.Logger.Error(deletedUrl.Err().Error())
+			utils.SendResponse(res, "Error deleting url", "e")
+			return
+		}
+	}
+
+	utils.SendResponse(res, "Selected urls deleted", "")
 }
