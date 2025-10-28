@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import toast from "react-hot-toast";
 import { makeRequest } from "../axios";
 
 export default function Register() {
@@ -9,19 +10,26 @@ export default function Register() {
   const navigate = useNavigate();
 
   const handleRegister = async () => {
-    const { data } = await makeRequest({
-      endpoint: "/auth/register",
-      dataOrQuery: { username, email, password },
-      method: "POST"
-    });
+    try {
+      const { data } = await makeRequest({
+        endpoint: "/auth/register",
+        dataOrQuery: { username, email, password },
+        method: "POST"
+      });
 
-    console.log({ data });
+      console.log({ data });
 
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("id", data.user._id);
-    localStorage.setItem("username", data.user.username);
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("id", data.user._id);
+      localStorage.setItem("username", data.user.username);
 
-    navigate("/");
+      toast.success("Registered!")
+
+      navigate("/");
+    } catch (error) {
+      console.error(error)
+      toast.error("Error registering, please try again")
+    }
   };
 
   return (
