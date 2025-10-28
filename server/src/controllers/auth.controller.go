@@ -136,7 +136,7 @@ func Login(res http.ResponseWriter, req *http.Request) {
 
 	loginData := utils.GlobalMap{
 		"user":        decodedUser,
-		"accessToken": accessToken,
+		"token": accessToken,
 	}
 
 	utils.SendResponse(res, "User logged In", "", loginData)

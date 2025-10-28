@@ -75,8 +75,8 @@ func Shorten(res http.ResponseWriter, req *http.Request) {
 		}
 
 		data := utils.GlobalMap{
-			"shortUrl": shortUrl,
-			"longUrl":  longUrl,
+			"shorturl": shortUrl,
+			"longurl":  longUrl,
 		}
 
 		utils.SendResponse(res, "URL shortened", "", data)
