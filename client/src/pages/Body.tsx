@@ -2,6 +2,7 @@ import { Trash2, Edit, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import NavBar from '../components/NavBar';
 import { makeRequest } from '../axios';
+import { domain } from '../constant';
 
 interface Url {
   id: string;
@@ -160,7 +161,7 @@ export default function Body() {
                     />
                   </td>
                   <td className="border p-2">{url.longurl}</td>
-                  <td className="border p-2">{url.shorturl}</td>
+                  <td className="border p-2">{domain + url.shorturl}</td>
                   <td className="border p-2 flex justify-center space-x-2">
                     <button
                       onClick={() => handleDelete(url.id)}
